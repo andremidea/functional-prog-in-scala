@@ -169,6 +169,10 @@ case object State {
     _ <- set(f(s))
   } yield ()
 
+  def sequence[S,A](states: List[State[S,A]]): State[S, List[A]] = {
+    states.foldRight(unit[S, List[A]](List()))((st, list) => st.map2(list)(_ :: _))
+  }
+
 }
 
 State.unit(1).map( x => x + 15).run(2)
@@ -177,3 +181,64 @@ State((s: Int) => (1 + s, s))
     .run(1)
 
 State.modify((s: Int) => 10).run(1)
+val statinho = State.unit[String, Int](10)
+State.sequence(List(statinho, statinho, statinho)).run("teste")
+
+
+sealed trait Input
+case object Coin extends Input
+case object Turn extends Input
+
+case class Machine(locked: Boolean, candies: Int, coins: Int) {
+  def unlock(): Machine = {
+    this.copy(locked = false)
+  }
+
+  def release(): Machine = {
+    this.copy(candies = candies - 1, locked = true)
+  }
+}
+
+val initialMachine = Machine(true, 10, 0)
+val initialState = State.unit[Machine, (Int, Int)](0, 0)
+
+def stateChange = (input: Input) => (machine: Machine) => (machine, input) match {
+  case (m, _) if machine.candies <= 0 => machine
+  case (m, Coin) if m.locked => machine.unlock()
+  case (m, Turn) if !m.locked => machine.release()
+  case _ => machine
+}
+
+
+def simulateMachine(inputs: List[Input]): State[Machine, (Int, Int)] =
+  for {
+    _ <- State.sequence(inputs.map(x => State.modify(stateChange(x))))
+    m <- State.get
+  } yield (m.candies, m.coins)
+
+def reasonAbout(inputs: List[Input]): State[Machine, (Int, Int)] = {
+  val xuxu = State.sequence(inputs.map(x => State.modify(stateChange(x))))
+  xuxu.flatMap(x => State.get.map(m => (m.candies, m.coins)))
+}
+
+
+val actions = Coin :: Turn :: Coin :: Turn :: Coin :: List(Coin)
+
+simulateMachine(actions).run(initialMachine)
+reasonAbout(actions).run(initialMachine)
+
+val unlocked = stateChange(Coin)(initialMachine)
+
+State.modify(stateChange(Coin))
+
+State.get[Machine].map(x => (x.candies)).run(initialMachine)
+
+State.get[Machine].map(x => (x.candies))
+
+
+State.modify(stateChange(Coin))
+  .flatMap(_ => State.modify(stateChange(Turn)))
+  .flatMap(x => State.get[Machine].map(x => (x.candies)))
+  .run(initialMachine)
+
+
