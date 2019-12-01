@@ -1,0 +1,132 @@
+* Chapter 8 - Property Based Testing
+
+
+#+begin_src scala :results output :tangle Gen.scala
+import part1.chapter6.{State,RNG,Simple}
+object Prop {
+  type SuccessCount = Int
+  type FailedCase = String
+}
+
+
+
+trait Prop {
+  def check: Either[(Prop.FailedCase, Prop.SuccessCount), Prop.SuccessCount]
+}
+#+end_src
+
+#+RESULTS:
+: import part1.chapter6.{State, RNG, Simple}
+: defined object Prop
+: warning: previously defined trait Prop is not a companion to object Prop.
+: Companions must be defined together; you may wish to use :paste mode for this.
+: defined trait Prop
+: warning: previously defined object Prop is not a companion to trait Prop.
+: Companions must be defined together; you may wish to use :paste mode for this.
+
+
+** Gen
+   SCHEDULED: <2016-10-29 Sat>
+
+It's something that generates type [A], we can use the implementation of RNG to do that,
+and also leverage the State monad to keep the seed. It's like a state trasition
+on top of a RNG
+
+#+begin_src scala :results output
+case class Gen[A](sample: State[RNG,A])
+#+end_src
+
+#+results:
+: defined class Gen
+
+Gen.choose, to generate a random number in a given interval. i to n(exclusive)
+we could use the function, range int from RNG.
+
+#+begin_src scala :results output
+def choose(start: Int, stopExclusive: Int): Gen[Int] = {
+   Gen(State((rng: RNG) => RNG.rangeInt(rng, start, stopExclusive)))
+}
+
+val x = choose(1, 100)
+x.sample.run(Simple(42))
+#+end_src
+#+RESULTS:
+: choose: (start: Int, stopExclusive: Int)Gen[Int]
+: x: Gen[Int] = Gen(State(<function1>))
+: res3: (Int, part1.chapter6.RNG) = (48,Simple(3149872))
+
+Gen has a sample, that is a state. The state is composed by,
+the state it was generated (the seed) and the value generated
+from that state.
+
+
+*** Adding knowledge to the Gen type
+
+    now i want the GEN to be smarter! So lets make some utility functions
+    * unit - to always return the same functions
+    * boolean - a generator for booleans
+    * listOfN, generate a list of n numbers from a given Gen, this is cool
+because it already starts to make composable functions using the gen type.
+
+**** Gen[List[A]] that is derived from a Gen[A]
+     Gen[A] is basically a State[RNG, A], when i run it it basically returns the 
+     the next State and the result, so i can use the state again. and get 
+     a new result.
+     
+
+#+begin_src scala :results output
+def unit[A](a : => A): Gen[A] = {
+   Gen(State.unit(a))
+}
+
+unit(2)
+
+def boolean: Gen[Boolean] = 
+   Gen(State((rng: RNG) => rng.nextInt match {case (x, y) => (x > 0, y)})) 
+
+val x = boolean.sample.run(Simple(-212312))
+boolean.sample.run(x._2)
+
+def listOfN[A](n: Int, g: Gen[A]): Gen[List[A]] = {
+    Gen(State.sequence(List.fill(n)(g.sample)))
+}
+#+end_src
+#+RESULTS:
+: unit: [A](a: => A)Gen[A]
+: res121: Gen[Int] = Gen(State(<function1>))
+: boolean: Gen[Boolean]
+: x: (Boolean, part1.chapter6.RNG) = (false,Simple(276072853787027))
+: res122: (Boolean, part1.chapter6.RNG) = (false,Simple(216498856807842))
+: listOfN: [A](n: Int, g: Gen[A])Gen[List[A]]
+
+
+**** Seems that i have some primitives, lets test them
+     I want to generate a list of strings, how can i do that?
+     And a pair of ints
+
+#+begin_src scala :results output
+val aListWith10Booleans = listOfN(10, boolean)
+aListWith10Booleans.sample.run(Simple(90))
+
+def flatMap[A,B](g: Gen[A], f: A => Gen[B]): Gen[B] = {
+   Gen(g.sample.flatMap((a: A) => f(a).sample))
+}
+
+
+val tupleInts: Gen[(Int, Int)] = 
+ flatMap(choose(1, 100), (x: Int) =>
+      Gen(State((rng: RNG) => ((x, rng.nextInt._1), rng.nextInt._2))))
+
+val strings: Gen[String] =
+  Gen(State((rng: RNG) => (rng.nextInt._1.toString, rng.nextInt._2)))
+
+#+end_src
+#+RESULTS:
+: aListWith10Booleans: Gen[List[Boolean]] = Gen(State(<function1>))
+: res124: (List[Boolean], part1.chapter6.RNG) = (List(true, false, false, true, true, false, false, false, true, false),Simple(232493687588460))
+: flatMap: [A, B](g: Gen[A], f: A => Gen[B])Gen[B]
+: tupleInts: Gen[(Int, Int)] = Gen(State(<function1>))
+: strings: Gen[String] = Gen(State(<function1>))
+
+
+
