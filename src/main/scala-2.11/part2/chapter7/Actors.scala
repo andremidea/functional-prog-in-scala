@@ -12,7 +12,7 @@ object Actors {
   type Par[+A] = ExecutorService => Future[A]
 
 
-  def run[A](es: ExecutorService)(p: Par[A]): A = {
+  def un[A](es: ExecutorService)(p: Par[A]): A = {
     val ref = new AtomicReference[A]
     val latch = new CountDownLatch(1)
 
